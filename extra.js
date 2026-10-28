@@ -306,12 +306,28 @@ $('wordCount').innerHTML = WORD_LIST.filter(x => wordStat(x.id).stable).length +
 (function () {
   const sel = $('deck'); if (!sel) return;
   // 묶음 목록은 앱이 나중에 채우므로, 채워질 때마다 이 항목이 있는지 확인해 넣는다.
+  // 여러 묶음 고르기: 고른 묶음만 모아 연습·운전 모드로 반복한다(고른 목록은 이 기기에 기억).
+  let multi = []; try { multi = JSON.parse(localStorage.getItem('loop-multi-decks') || '[]'); } catch {}
+  const multiLabel = () => multi.length ? `고른 묶음만 (${multi.length}개) · 다시 고르기` : '여러 묶음 고르기…';
   const addOpt = () => { const all = sel.querySelector('[value="all"]'); if (!all || sel.querySelector('[value="allseq"]')) return;
-    const o = document.createElement('option'); o.value = 'allseq'; o.textContent = '전체 묶음 순서대로 (01번부터)'; all.before(o); };
+    const o = document.createElement('option'); o.value = 'allseq'; o.textContent = '전체 묶음 순서대로 (01번부터)'; all.before(o);
+    const m = document.createElement('option'); m.value = 'multi'; m.textContent = multiLabel(); all.after(m); };
+  const pick = document.createElement('div'); pick.id = 'multiPick'; pick.hidden = true;
+  pick.innerHTML = '<div class="mp-box"><h3>연습할 묶음 고르기</h3><div id="mpList"></div><div class="mp-btns"><button id="mpNone">모두 해제</button><button id="mpOk" class="primary">이 묶음만 연습</button></div></div>';
+  document.body.appendChild(pick);
+  const st = document.createElement('style');
+  st.textContent = '#multiPick{position:fixed;inset:0;z-index:60;background:rgba(24,34,59,.45);display:flex;align-items:center;justify-content:center;padding:16px}#multiPick[hidden]{display:none}#multiPick .mp-box{background:#fff;border-radius:18px;padding:16px;width:min(460px,100%);max-height:85vh;display:flex;flex-direction:column}#multiPick h3{margin:0 0 8px}#mpList{overflow:auto;display:grid;gap:2px;margin-bottom:10px}#mpList label{display:flex;gap:8px;align-items:center;padding:6px 4px;font-weight:400}#multiPick .mp-btns{display:grid;grid-template-columns:1fr 2fr;gap:8px}';
+  document.head.appendChild(st);
+  const openPick = () => { $('mpList').innerHTML = DECKS.filter(d => cards().some(c => c.deck === d.id)).map(d => `<label><input type="checkbox" value="${esc(d.id)}" ${multi.includes(d.id) ? 'checked' : ''}> ${esc(d.title)} <small class="muted">(${cards().filter(c => c.deck === d.id).length})</small></label>`).join(''); pick.hidden = false; };
+  $('mpNone').onclick = () => pick.querySelectorAll('input').forEach(i => { i.checked = false; });
+  $('mpOk').onclick = () => { multi = [...pick.querySelectorAll('input:checked')].map(i => i.value); try { localStorage.setItem('loop-multi-decks', JSON.stringify(multi)); } catch {}
+    pick.hidden = true; sel.querySelector('[value="multi"]').textContent = multiLabel(); if (!multi.length) sel.value = 'all'; seq = 0; recent = []; refreshPatterns(); next(); };
+  sel.addEventListener('change', () => { if (sel.value === 'multi') openPick(); });
   addOpt(); new MutationObserver(addOpt).observe(sel, { childList: true });
   eligible = (orig => () => {
-    if (sel.value !== 'allseq') return orig();
-    sel.value = 'all'; let a; try { a = orig(); } finally { sel.value = 'allseq'; }
+    if (sel.value !== 'allseq' && sel.value !== 'multi') return orig();
+    const v = sel.value; sel.value = 'all'; let a; try { a = orig(); } finally { sel.value = v; }
+    if (v === 'multi') a = a.filter(c => multi.includes(c.deck));
     const rank = new Map(DECKS.map((d, i) => [d.id, i]));
     return a.map((c, i) => [c, i]).sort((x, y) => (rank.get(x[0].deck) ?? 999) - (rank.get(y[0].deck) ?? 999) || x[1] - y[1]).map(x => x[0]);
   })(eligible);
@@ -327,7 +343,8 @@ $('wordCount').innerHTML = WORD_LIST.filter(x => wordStat(x.id).stable).length +
 // 학습 단계 메뉴에 이 묶음에서 몇 문장이 나오는지 표시한다.
 const STAGE_LABEL = { ordered: '전체 · 기초부터 순서대로', core: '기초 필수부터', pattern: '같은 틀로 바꿔 말하기', extended: '상황 확장', all: '모든 단계 섞기' };
 function updateStageCounts() {
-  const deck = /^all/.test($('deck').value) ? 'all' : $('deck').value, inDeck = cards().filter(c => deck === 'all' || c.deck === deck);
+  let picked = []; try { picked = JSON.parse(localStorage.getItem('loop-multi-decks') || '[]'); } catch {}
+  const deck = /^all/.test($('deck').value) ? 'all' : $('deck').value, inDeck = cards().filter(c => deck === 'all' || c.deck === deck || (deck === 'multi' && picked.includes(c.deck)));
   const patternIds = new Set(PATTERNS.filter(p => deck === 'all' || p.deck === deck).flatMap(p => p.cardIds));
   const n = { ordered: inDeck.length, all: inDeck.length, core: inDeck.filter(c => (c.stage || 'core') === 'core').length, extended: inDeck.filter(c => c.stage === 'extended').length, pattern: cards().filter(c => patternIds.has(c.id)).length };
   [...$('stage').options].forEach(o => { if (STAGE_LABEL[o.value]) o.textContent = `${STAGE_LABEL[o.value]} (${n[o.value]})`; });

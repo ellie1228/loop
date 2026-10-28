@@ -6,7 +6,7 @@ const DRIVE_SILENCE = 'data:audio/mpeg;base64,//NAxAAAAANIAAAAAExBTUUzLjEwMFVVVV
 const DV = { on: false, paused: false, tab: null, list: [], i: 0, step: 0, gap: 3, seq: true, el: null, lock: null, misses: 0, rate: 1 };
 try { DV.rate = +localStorage.getItem('loop-drive-rate') || 1; } catch {}
 const DRIVE_TABS = {
-  practice: { auto: 'autoPractice', gap: 'autoPracticeGap', pool: () => eligible(), seq: () => $('order').value === 'sequence', cur: () => current },
+  practice: { auto: 'autoPractice', gap: 'autoPracticeGap', pool: () => eligible(), seq: () => $('order').value === 'sequence' && $('deck').value !== 'all', cur: () => current },  // '모든 묶음 섞기'면 섞어서
   gram: { auto: 'autoGram', gap: 'autoGramGap', pool: () => gramPool(), seq: () => $('gramOrder').value === 'sequence' && G.lesson !== 'mix', cur: () => G.current },
   words: { auto: 'autoWords', gap: 'autoWordsGap', pool: () => wordPool(), seq: () => $('wordOrder').value === 'sequence', cur: () => W.current },
 };

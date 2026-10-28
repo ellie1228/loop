@@ -260,6 +260,7 @@ function renderGramHome() {
   $('gramHome').hidden = false; $('gramWorkspace').hidden = true; stopAuto();
   $('gramMastered').innerHTML = GRAM_CARDS.filter(c => gramStat(c.id).stable).length + '<small>/' + GRAM_CARDS.length + '</small>';
   let last = ''; try { last = localStorage.getItem('loop-gram-last') || ''; } catch {}
+  if (last.startsWith('grp:') && !gramGroups().some(([n]) => n === last.slice(4))) last = '';  // 단원 이름이 바뀐 경우
   const lastName = last === 'all' ? '전체 순서대로' : last === 'mix' ? '전체 섞기' : last.startsWith('grp:') ? last.slice(4) : gramLessonData(last)?.title;
   $('gramResumeBtn').hidden = !lastName; $('gramResumeBtn').textContent = lastName ? `▶ 이어서 연습 · ${lastName}` : '';
   $('gramResumeBtn').onclick = () => openGramPractice(last, true);
