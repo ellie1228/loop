@@ -332,6 +332,9 @@ $('wordCount').innerHTML = WORD_LIST.filter(x => wordStat(x.id).stable).length +
     return a.map((c, i) => [c, i]).sort((x, y) => (rank.get(x[0].deck) ?? 999) - (rank.get(y[0].deck) ?? 999) || x[1] - y[1]).map(x => x[0]);
   })(eligible);
   sel.addEventListener('change', () => { if (sel.value === 'allseq' && $('order').value !== 'sequence') { $('order').value = 'sequence'; seq = 0; recent = []; next(); } });
+  // 앱이 이 항목을 기억해 두었다가 처음 열 때 고르면, 위 처리가 붙기 전이라 '카드 없음'이 뜰 수 있다 → 다시 뽑는다.
+  const fixFirst = () => { if (/^(allseq|multi)$/.test(sel.value) && !current && eligible().length) next(); };
+  [0, 600, 2000].forEach(ms => setTimeout(fixFirst, ms));
 })();
 // 반복 방식 선택을 기억한다(처음엔 '순서대로', 나중에 '오답 우선'으로 바꾸면 그대로 유지).
 ['order', 'stage', 'drillOrder', 'wordOrder', 'bizOrder'].forEach(id => {
@@ -357,3 +360,110 @@ refreshPatterns = (orig => () => { orig(); updateStageCounts(); })(refreshPatter
   try { const v = localStorage.getItem('loop-chk-' + id); if (v !== null) el.checked = v === '1'; } catch {}
   el.addEventListener('change', () => { try { localStorage.setItem('loop-chk-' + id, el.checked ? '1' : '0'); } catch {} });
 });
+
+// 원어민 소리 줄(🔊)과 강세 보기: 카드의 say(한글 소리)·stress(세게 읽는 단어)를 정답 아래에 보여 준다.
+(() => {
+  const en = $('english'); if (!en) return;
+  const line = document.createElement('p'); line.id = 'sayLine'; line.hidden = true;
+  const tog = document.createElement('button'); tog.id = 'stressToggle'; tog.className = 'textbutton';
+  en.after(line); line.after(tog);
+  let on = true; try { on = localStorage.getItem('loop-stress') !== '0'; } catch {}
+  const esc2 = s => s.replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  let last = null;
+  function draw() {
+    const c = typeof current !== 'undefined' && current; if (!c) return;
+    const stress = c.stress || [];
+    if (on && stress.length) {
+      const set = new Set(stress.map(w => w.toLowerCase()));
+      en.innerHTML = c.en.split(/(\s+)/).map(t => { const w = t.replace(/^[^\w']+|[^\w']+$/g, ''); return w && set.has(w.toLowerCase()) ? `<b class="stress">${esc2(t)}</b>` : esc2(t); }).join('');
+      en.classList.add('stressed');
+    } else { en.textContent = c.en; en.classList.remove('stressed'); }
+    line.hidden = !c.say; line.innerHTML = c.say ? `🔊 <span class="say-label">원어민 소리</span> ${esc2(c.say)}` : '';
+    tog.hidden = !stress.length; tog.textContent = on ? '강세 보기 끄기' : '강세 보기 켜기';
+    last = en.innerHTML;
+  }
+  new MutationObserver(() => { if (en.innerHTML !== last) draw(); }).observe(en, { childList: true, characterData: true, subtree: true });
+  tog.addEventListener('click', () => { on = !on; try { localStorage.setItem('loop-stress', on ? '1' : '0'); } catch {} draw(); });
+})();
+
+// ── 영어 어순 연습: 문제 방식(자연스러운 한국어 / 영어 어순 한국어), 어순 힌트, 덩어리 보기 ──
+// 카드의 ko_order("나 갈게 / 집에 / 지금")와 en_chunks("I'll go / home / now.")를 쓴다.
+let KO_MODE = 'natural';
+try { KO_MODE = localStorage.getItem('loop-ko-mode') === 'order' ? 'order' : 'natural'; } catch {}
+const koText = c => (KO_MODE === 'order' && c?.ko_order) ? c.ko_order : (c?.ko || '');
+(() => {
+  const st = document.createElement('style');
+  st.textContent = `#orderHint{margin:0 auto}#orderHintText{color:#1d49e8;font-weight:700;font-size:18px;margin:6px 0}
+    .chunk-line{font-size:14px;color:#33436a;margin:4px 0}.chunk-line .lbl{font-size:12px;color:#8a94a8;margin-right:4px}.chunk-line .ko{color:#64708a}`;
+  document.head.appendChild(st);
+  // 1) 문제 방식 선택(기초 말하기 왼쪽 설정)
+  const lab = document.createElement('label');
+  lab.innerHTML = '한국어 문제<select id="koMode"><option value="natural">자연스러운 한국어</option><option value="order">영어 어순 한국어 (덩어리)</option></select>';
+  $('mode').closest('label').before(lab); $('koMode').value = KO_MODE;
+  // 2) 어순 힌트 버튼(문제 아래)
+  const kor = $('korean'), hint = document.createElement('button'), hintText = document.createElement('p');
+  hint.id = 'orderHint'; hint.className = 'textbutton'; hint.textContent = '💡 영어 어순 힌트'; hintText.id = 'orderHintText'; hintText.hidden = true;
+  kor.after(hint); hint.after(hintText);
+  hint.onclick = () => { hintText.hidden = !hintText.hidden; };
+  // 3) 정답 아래 덩어리 줄
+  const chunk = document.createElement('p'); chunk.className = 'chunk-line'; chunk.id = 'chunkLine';
+  ($('stressToggle') || $('english')).after(chunk);
+  let last = null;
+  function draw() {
+    const c = current; if (!c) return;
+    const want = c.image ? kor.textContent : koText(c);
+    if (!c.image && kor.textContent !== want) kor.textContent = want;
+    last = kor.textContent;
+    const other = KO_MODE === 'order' ? c.ko : c.ko_order;
+    hint.textContent = KO_MODE === 'order' ? '💬 자연스러운 한국어 보기' : '💡 영어 어순 힌트';
+    hint.hidden = !c.ko_order || !!c.image || (KO_MODE !== 'order' && !/ \/ /.test(c.ko_order));
+    hintText.textContent = other || ''; hintText.hidden = true;
+    chunk.hidden = !c.en_chunks || !/ \/ /.test(c.en_chunks);
+    chunk.innerHTML = c.en_chunks ? `🧩 <span class="lbl">덩어리</span><span lang="en">${esc(c.en_chunks)}</span><br><span class="ko">${esc(c.ko_order || '')}</span>` : '';
+  }
+  new MutationObserver(() => { if (kor.textContent !== last) draw(); }).observe(kor, { childList: true, characterData: true, subtree: true });
+  $('koMode').addEventListener('change', e => { KO_MODE = e.target.value; try { localStorage.setItem('loop-ko-mode', KO_MODE); } catch {} last = null; draw(); });
+  draw();
+  // 4) 듣기 탭: 정답에 덩어리별 뜻(영어 순서 그대로 이해하기)
+  const lko = $('listenKo'); if (lko) {
+    const lc = document.createElement('p'); lc.className = 'chunk-line'; lko.after(lc);
+    const drawL = () => { const c = L.current; lc.hidden = !c?.en_chunks || !/ \/ /.test(c.en_chunks); lc.innerHTML = c?.en_chunks ? `🧩 <span lang="en">${esc(c.en_chunks)}</span><br><span class="ko">${esc(c.ko_order || '')}</span>` : ''; };
+    new MutationObserver(drawL).observe($('listenEn'), { childList: true, characterData: true, subtree: true });
+  }
+})();
+
+// ── 오늘 하고 싶었던 말: 영어로 못 한 한국어를 적어 두면 나중에 카드로 만든다 ──
+(() => {
+  const st = document.createElement('style');
+  st.textContent = `#memoPanel textarea{min-height:60px}#memoPanel ul{margin:8px 0 0;padding-left:18px}#memoPanel li{font-size:14px;margin:4px 0}#memoPanel li small{color:#8a94a8;margin-left:6px}#memoPanel li button{min-height:0;padding:0 6px;border:0;background:none;color:#9aa1ab}`;
+  document.head.appendChild(st);
+  const p = document.createElement('details'); p.id = 'memoPanel'; p.className = 'panel';
+  p.innerHTML = '<summary>📝 오늘 하고 싶었던 말 <span id="memoCount" class="muted"></span></summary><p class="muted small">영어로 말하고 싶었는데 못 한 말을 한국어로 적어 두세요. 다음에 Claude에게 "메모 카드로 만들어줘"라고 하면 쉬운 영어 카드로 만들어 드려요.</p>' +
+    '<textarea id="memoInput" maxlength="300" placeholder="예: 그거 어제 미리 다 끝내 놨어"></textarea><div class="row" style="justify-content:flex-start"><button id="memoSave" class="primary">적어 두기</button><button id="memoCopy">전체 복사</button></div><ul id="memoList"></ul>';
+  $('practice').appendChild(p);
+  let memos = []; try { memos = JSON.parse(localStorage.getItem('loop-memos') || '[]'); } catch {}
+  let doc = null;  // claude.ai 앱에서는 내 계정 저장소에도 둔다(전용 앱은 firebase.js가 loopMemos로 맞춘다)
+  const persist = () => { try { localStorage.setItem('loop-memos', JSON.stringify(memos)); } catch {} doc?.set({ memos }).catch(() => {}); window.loopMemos?.onSave?.(memos); };
+  window.loopMemos = Object.assign(window.loopMemos || {}, {
+    get: () => memos,
+    merge(remote) { const seen = new Set(memos.map(m => m.time + m.text)); for (const m of remote || []) if (!seen.has(m.time + m.text)) memos.push(m);
+      memos.sort((a, b) => a.time.localeCompare(b.time)); draw(); if (memos.length !== (remote || []).length) persist(); else try { localStorage.setItem('loop-memos', JSON.stringify(memos)); } catch {} },
+  });
+  const draw = () => {
+    $('memoCount').textContent = memos.length ? `(${memos.length})` : '';
+    $('memoList').innerHTML = memos.map((m, i) => `<li>${esc(m.text)}<small>${m.time.slice(5, 10)}</small><button data-del="${i}" aria-label="지우기">✕</button></li>`).join('');
+  };
+  $('memoSave').onclick = () => { const t = $('memoInput').value.trim(); if (!t) return; memos.push({ text: t, time: new Date().toISOString() }); $('memoInput').value = ''; persist(); draw(); };
+  $('memoList').onclick = e => { const b = e.target.closest('[data-del]'); if (!b) return; memos.splice(+b.dataset.del, 1); persist(); draw(); };
+  $('memoCopy').onclick = async () => { const t = '[오늘 하고 싶었던 말]\n' + memos.map(m => '- ' + m.text).join('\n'); try { await navigator.clipboard.writeText(t); $('memoCopy').textContent = '복사됨 ✓'; } catch { $('memoInput').value = t; $('memoInput').select(); } };
+  draw();
+  (async () => {
+    if (!window.claude?.use) return;
+    const [store, user] = await Promise.all([claude.use('db'), claude.use('user')]); const uid = user ? await user.id() : null;
+    if (!store || !uid) return;
+    doc = store.doc('data/users/' + uid + '/memo~list');
+    try { const s = await doc.get(); const remote = s.exists ? (s.data()?.memos || []) : [];
+      const seen = new Set(memos.map(m => m.time + m.text)); for (const m of remote) if (!seen.has(m.time + m.text)) memos.push(m);
+      memos.sort((a, b) => a.time.localeCompare(b.time)); draw(); if (memos.length !== remote.length) persist(); } catch {}
+  })();
+})();

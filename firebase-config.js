@@ -1,0 +1,1 @@
+window.FIREBASE_CONFIG={"apiKey": "AIzaSyD4Htkznq3sQuoQfUOkonx90DRCQqJygQU", "authDomain": "loop-english-fdecd.firebaseapp.com", "projectId": "loop-english-fdecd", "storageBucket": "loop-english-fdecd.firebasestorage.app", "messagingSenderId": "791472132320", "appId": "1:791472132320:web:443f38313b4f06771c0085"};
